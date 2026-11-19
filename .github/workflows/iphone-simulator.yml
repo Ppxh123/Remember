@@ -12,34 +12,47 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Set up Flutter 3.44.6
-        run: |
-          git clone --depth 1 --branch 3.44.6 https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
-          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
-
-      - name: Resolve locked dependencies
-        run: |
-          flutter --version
-          flutter pub get --enforce-lockfile
-
-      - name: Boot iPhone Simulator
+      - name: Start iPhone Simulator
         id: simulator
         run: |
           simulator_id="$(xcrun simctl list devices available --json |
             jq -er '[.devices | to_entries | sort_by(.key) | reverse | .[].value[] |
               select(.name | startswith("iPhone"))][0].udid')"
           xcrun simctl boot "$simulator_id"
-          xcrun simctl bootstatus "$simulator_id" -b
           echo "id=$simulator_id" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Flutter 3.44.6
+        run: |
+          git clone --depth 1 --branch 3.44.6 https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+
+      - name: Prepare iOS SDK and resolve locked dependencies
+        run: |
+          flutter --version
+          flutter precache --ios
+          flutter pub get --enforce-lockfile
 
       - name: Analyze and run widget tests
         run: |
           flutter analyze --no-pub
           flutter test --no-pub
 
-      - name: Verify persistence across iPhone app processes
+      - name: Wait for iPhone Simulator
+        timeout-minutes: 5
+        env:
+          SIMULATOR_ID: ${{ steps.simulator.outputs.id }}
+        run: xcrun simctl bootstatus "$SIMULATOR_ID" -b
+
+      - name: Save date and time zone in the first app process
+        timeout-minutes: 10
         env:
           SIMULATOR_ID: ${{ steps.simulator.outputs.id }}
         run: |
-          flutter test --no-pub -d "$SIMULATOR_ID" --no-uninstall --dart-define=REMEMBER_RESTART_PHASE=save integration_test/date_persistence_test.dart
-          flutter test --no-pub -d "$SIMULATOR_ID" --dart-define=REMEMBER_RESTART_PHASE=verify integration_test/date_persistence_test.dart
+          flutter test --no-pub --reporter expanded -d "$SIMULATOR_ID" --no-uninstall --dart-define=REMEMBER_RESTART_PHASE=save integration_test/date_persistence_test.dart
+
+      - name: Verify saved data in a new app process
+        timeout-minutes: 8
+        env:
+          SIMULATOR_ID: ${{ steps.simulator.outputs.id }}
+        run: |
+          flutter test --no-pub --reporter expanded -d "$SIMULATOR_ID" --dart-define=REMEMBER_RESTART_PHASE=verify integration_test/date_persistence_test.dart
