@@ -1,15 +1,20 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
+import 'app_calendar.dart';
 import 'date_entries.dart';
 import 'date_form.dart';
 
 class DatePage extends StatefulWidget {
-  const DatePage({required this.entries, required this.now, super.key});
+  const DatePage({
+    required this.entries,
+    required this.today,
+    required this.timeZone,
+    super.key,
+  });
 
   final DateEntries entries;
-  final DateTime Function() now;
+  final DateTime today;
+  final AppTimeZone timeZone;
 
   @override
   State<DatePage> createState() => _DatePageState();
@@ -17,38 +22,10 @@ class DatePage extends StatefulWidget {
 
 class _DatePageState extends State<DatePage> {
   late Future<List<DateEntry>> _entries;
-  late DateTime _today;
-  late final AppLifecycleListener _lifecycle;
-  Timer? _midnight;
-
   @override
   void initState() {
     super.initState();
     _entries = widget.entries.read();
-    _updateToday(initial: true);
-    _lifecycle = AppLifecycleListener(onResume: _updateToday);
-  }
-
-  @override
-  void dispose() {
-    _lifecycle.dispose();
-    _midnight?.cancel();
-    super.dispose();
-  }
-
-  void _updateToday({bool initial = false}) {
-    final beijingNow = widget.now().toUtc().add(const Duration(hours: 8));
-    final day = DateTime.utc(beijingNow.year, beijingNow.month, beijingNow.day);
-    final nextDay = day.add(const Duration(days: 1));
-
-    _midnight?.cancel();
-    _midnight = Timer(nextDay.difference(beijingNow), _updateToday);
-
-    if (initial) {
-      _today = day;
-    } else if (_today != day) {
-      setState(() => _today = day);
-    }
   }
 
   void _reload() {
@@ -61,7 +38,7 @@ class _DatePageState extends State<DatePage> {
   Future<void> _addDate() async {
     final saved = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => DateForm(today: _today, save: widget.entries.add),
+        builder: (_) => DateForm(today: widget.today, save: widget.entries.add),
       ),
     );
     if (saved == true && mounted) _reload();
@@ -90,7 +67,10 @@ class _DatePageState extends State<DatePage> {
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  Text('北京时间', style: theme.textTheme.labelLarge),
+                  Text(
+                    widget.timeZone.label,
+                    style: theme.textTheme.labelLarge,
+                  ),
                 ],
               ),
               const SizedBox(height: 12),
@@ -117,7 +97,7 @@ class _DatePageState extends State<DatePage> {
                     }
                     return ListView.separated(
                       itemBuilder: (_, index) =>
-                          _DateCard(entry: entries[index], today: _today),
+                          _DateCard(entry: entries[index], today: widget.today),
                       separatorBuilder: (_, _) => const SizedBox(height: 10),
                       itemCount: entries.length,
                     );

@@ -5,12 +5,13 @@ import UIKit
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    let messenger = engineBridge.applicationRegistrar.messenger()
 
-    let channel = FlutterMethodChannel(
+    let storage = FlutterMethodChannel(
       name: "io.github.ppxh123.remember/storage",
-      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+      binaryMessenger: messenger
     )
-    channel.setMethodCallHandler { call, result in
+    storage.setMethodCallHandler { call, result in
       guard call.method == "prepareLocalDirectory" else {
         result(FlutterMethodNotImplemented)
         return
@@ -34,5 +35,74 @@ import UIKit
         result(FlutterError(code: "local_storage_unavailable", message: nil, details: nil))
       }
     }
+
+    let deviceCalendar = FlutterMethodChannel(
+      name: "io.github.ppxh123.remember/device_calendar",
+      binaryMessenger: messenger
+    )
+    deviceCalendar.setMethodCallHandler { call, result in
+      guard call.method == "dayAt" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      guard let milliseconds = call.arguments as? NSNumber else {
+        result(FlutterError(code: "invalid_instant", message: nil, details: nil))
+        return
+      }
+
+      let instant = Date(timeIntervalSince1970: milliseconds.doubleValue / 1000)
+      var calendar = Calendar(identifier: .gregorian)
+      calendar.timeZone = .autoupdatingCurrent
+      let date = calendar.dateComponents([.year, .month, .day], from: instant)
+      guard let year = date.year, let month = date.month, let day = date.day,
+        let interval = calendar.dateInterval(of: .day, for: instant)
+      else {
+        result(FlutterError(code: "calendar_unavailable", message: nil, details: nil))
+        return
+      }
+      let nextStart = Int64((interval.end.timeIntervalSince1970 * 1000).rounded())
+      result([Int64(year), Int64(month), Int64(day), nextStart])
+    }
+
+    FlutterEventChannel(
+      name: "io.github.ppxh123.remember/clock_changes",
+      binaryMessenger: messenger
+    ).setStreamHandler(ClockChanges())
+  }
+}
+
+private final class ClockChanges: NSObject, FlutterStreamHandler {
+  private var observers: [NSObjectProtocol] = []
+
+  func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink)
+    -> FlutterError?
+  {
+    removeObservers()
+    let names: [Notification.Name] = [
+      .NSSystemTimeZoneDidChange,
+      UIApplication.significantTimeChangeNotification,
+    ]
+    observers = names.map { name in
+      NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in
+        events(nil)
+      }
+    }
+    return nil
+  }
+
+  func onCancel(withArguments arguments: Any?) -> FlutterError? {
+    removeObservers()
+    return nil
+  }
+
+  private func removeObservers() {
+    for observer in observers {
+      NotificationCenter.default.removeObserver(observer)
+    }
+    observers.removeAll()
+  }
+
+  deinit {
+    removeObservers()
   }
 }
