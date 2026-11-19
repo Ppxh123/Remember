@@ -7,6 +7,66 @@ import 'package:remember/date_entries.dart';
 import 'package:remember/main.dart';
 
 void main() {
+  testWidgets('农历生日保存闰月，并显示换算后的公历日期', (tester) async {
+    await tester.pumpWidget(
+      MainApp(
+        dateEntries: _MemoryDateEntries(),
+        timeZones: _MemoryTimeZones(),
+        now: () => DateTime.utc(2023, 3, 31),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('添加日期'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButtonFormField<DateEntryType>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('生日').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('历法'), findsOneWidget);
+    await tester.tap(find.byType(DropdownButtonFormField<DateEntryCalendar>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('农历').last);
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextFormField), '闰月生日');
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('生日 · 农历'), findsOneWidget);
+    expect(find.text('原始日期 2023年闰二月初十'), findsOneWidget);
+    expect(find.text('2023年3月31日星期五'), findsOneWidget);
+    expect(find.text('今天'), findsOneWidget);
+  });
+
+  testWidgets('超出农历录入范围时要求重新选择日期', (tester) async {
+    await tester.pumpWidget(
+      MainApp(
+        dateEntries: _MemoryDateEntries(),
+        timeZones: _MemoryTimeZones(),
+        now: () => DateTime.utc(1899, 6, 1),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('添加日期'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButtonFormField<DateEntryType>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('生日').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButtonFormField<DateEntryCalendar>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('农历').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('请选择 1901–2100 年的农历日期'), findsOneWidget);
+    final save = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, '保存'),
+    );
+    expect(save.onPressed, isNull);
+  });
+
   testWidgets('新建公历生日和纪念日，目标当天显示今天', (tester) async {
     await tester.pumpWidget(
       MainApp(

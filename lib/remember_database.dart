@@ -5,12 +5,18 @@ import 'package:sqflite/sqflite.dart';
 
 import 'app_calendar.dart';
 import 'date_entries.dart';
+import 'lunar_date.dart';
 
 final class RememberDatabase implements DateEntries, AppTimeZoneStore {
   const RememberDatabase({this.databaseName = 'remember.db'});
 
   static const _storage = MethodChannel('io.github.ppxh123.remember/storage');
   static const _dateEntryType = "type TEXT NOT NULL DEFAULT 'oneTime'";
+  static const _lunarColumns = [
+    'lunar_year INTEGER',
+    'lunar_month INTEGER',
+    'lunar_day INTEGER',
+  ];
 
   static const _createSettings = '''
     CREATE TABLE app_settings (
@@ -33,14 +39,15 @@ final class RememberDatabase implements DateEntries, AppTimeZoneStore {
 
     return openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: (database, _) async {
         await database.execute('''
           CREATE TABLE date_entries (
             id INTEGER PRIMARY KEY,
             title TEXT NOT NULL,
             target_date INTEGER NOT NULL,
-            $_dateEntryType
+            $_dateEntryType,
+            ${_lunarColumns.join(', ')}
           )
         ''');
         await database.execute(_createSettings);
@@ -52,6 +59,11 @@ final class RememberDatabase implements DateEntries, AppTimeZoneStore {
             'ALTER TABLE date_entries ADD $_dateEntryType',
           );
         }
+        if (oldVersion < 4) {
+          for (final column in _lunarColumns) {
+            await database.execute('ALTER TABLE date_entries ADD $column');
+          }
+        }
       },
     );
   }
@@ -61,17 +73,34 @@ final class RememberDatabase implements DateEntries, AppTimeZoneStore {
     final database = await _open();
     final rows = await database.query('date_entries', orderBy: 'id DESC');
 
-    return [
-      for (final row in rows)
-        DateEntry(
-          title: row['title'] as String,
-          type: DateEntryType.values.byName(row['type'] as String),
-          targetDate: DateTime.fromMillisecondsSinceEpoch(
-            row['target_date'] as int,
-            isUtc: true,
-          ),
+    return rows.map(_dateEntryFromRow).toList();
+  }
+
+  DateEntry _dateEntryFromRow(Map<String, Object?> row) {
+    final title = row['title'] as String;
+    final type = DateEntryType.values.byName(row['type'] as String);
+    if (row['lunar_year'] case final int year) {
+      final signedMonth = row['lunar_month'] as int;
+      return DateEntry.lunar(
+        title: title,
+        type: type,
+        originalDate: LunarDate(
+          year: year,
+          month: signedMonth.abs(),
+          day: row['lunar_day'] as int,
+          isLeapMonth: signedMonth < 0,
         ),
-    ];
+      );
+    }
+
+    return DateEntry(
+      title: title,
+      type: type,
+      targetDate: DateTime.fromMillisecondsSinceEpoch(
+        row['target_date'] as int,
+        isUtc: true,
+      ),
+    );
   }
 
   @override
@@ -81,6 +110,9 @@ final class RememberDatabase implements DateEntries, AppTimeZoneStore {
       'title': entry.title,
       'type': entry.type.name,
       'target_date': entry.targetDate.millisecondsSinceEpoch,
+      'lunar_year': entry.lunarDate?.year,
+      'lunar_month': entry.lunarDate?.signedMonth,
+      'lunar_day': entry.lunarDate?.day,
     });
   }
 

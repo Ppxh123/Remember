@@ -165,6 +165,8 @@ class _DateCard extends StatelessWidget {
     final theme = Theme.of(context);
     final dates = MaterialLocalizations.of(context);
     final occurrence = entry.occurrenceFor(today);
+    final originalDate =
+        entry.lunarDate?.label ?? dates.formatFullDate(entry.targetDate);
     final days = occurrence.difference(today).inDays;
     final countdown = switch (days) {
       > 0 => '还有 $days 天',
@@ -184,7 +186,7 @@ class _DateCard extends StatelessWidget {
             Text(entry.title, style: theme.textTheme.titleMedium),
             if (entry.type.repeats)
               Text(
-                '${entry.type.label} · 公历',
+                '${entry.type.label} · ${entry.calendar.label}',
                 style: theme.textTheme.labelMedium,
               ),
             const SizedBox(height: 4),
@@ -193,10 +195,7 @@ class _DateCard extends StatelessWidget {
               style: theme.textTheme.bodyMedium,
             ),
             if (entry.type.repeats)
-              Text(
-                '原始日期 ${dates.formatFullDate(entry.targetDate)}',
-                style: theme.textTheme.bodySmall,
-              ),
+              Text('原始日期 $originalDate', style: theme.textTheme.bodySmall),
             const SizedBox(height: 8),
             Text(
               countdown,
