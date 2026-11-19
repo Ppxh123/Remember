@@ -1,0 +1,45 @@
+name: iPhone Simulator
+
+on: [push, pull_request, workflow_dispatch]
+
+permissions:
+  contents: read
+
+jobs:
+  ios-simulator:
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Flutter 3.44.6
+        run: |
+          git clone --depth 1 --branch 3.44.6 https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+
+      - name: Resolve locked dependencies
+        run: |
+          flutter --version
+          flutter pub get --enforce-lockfile
+
+      - name: Boot iPhone Simulator
+        id: simulator
+        run: |
+          simulator_id="$(xcrun simctl list devices available --json |
+            jq -er '[.devices | to_entries | sort_by(.key) | reverse | .[].value[] |
+              select(.name | startswith("iPhone"))][0].udid')"
+          xcrun simctl boot "$simulator_id"
+          xcrun simctl bootstatus "$simulator_id" -b
+          echo "id=$simulator_id" >> "$GITHUB_OUTPUT"
+
+      - name: Analyze and run widget tests
+        run: |
+          flutter analyze --no-pub
+          flutter test --no-pub
+
+      - name: Verify persistence across iPhone app processes
+        env:
+          SIMULATOR_ID: ${{ steps.simulator.outputs.id }}
+        run: |
+          flutter test --no-pub -d "$SIMULATOR_ID" --no-uninstall --dart-define=REMEMBER_RESTART_PHASE=save integration_test/date_persistence_test.dart
+          flutter test --no-pub -d "$SIMULATOR_ID" --dart-define=REMEMBER_RESTART_PHASE=verify integration_test/date_persistence_test.dart
