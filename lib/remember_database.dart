@@ -10,6 +10,7 @@ final class RememberDatabase implements DateEntries, AppTimeZoneStore {
   const RememberDatabase({this.databaseName = 'remember.db'});
 
   static const _storage = MethodChannel('io.github.ppxh123.remember/storage');
+  static const _dateEntryType = "type TEXT NOT NULL DEFAULT 'oneTime'";
 
   static const _createSettings = '''
     CREATE TABLE app_settings (
@@ -32,19 +33,25 @@ final class RememberDatabase implements DateEntries, AppTimeZoneStore {
 
     return openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: (database, _) async {
         await database.execute('''
           CREATE TABLE date_entries (
             id INTEGER PRIMARY KEY,
             title TEXT NOT NULL,
-            target_date INTEGER NOT NULL
+            target_date INTEGER NOT NULL,
+            $_dateEntryType
           )
         ''');
         await database.execute(_createSettings);
       },
       onUpgrade: (database, oldVersion, _) async {
         if (oldVersion < 2) await database.execute(_createSettings);
+        if (oldVersion < 3) {
+          await database.execute(
+            'ALTER TABLE date_entries ADD $_dateEntryType',
+          );
+        }
       },
     );
   }
@@ -58,6 +65,7 @@ final class RememberDatabase implements DateEntries, AppTimeZoneStore {
       for (final row in rows)
         DateEntry(
           title: row['title'] as String,
+          type: DateEntryType.values.byName(row['type'] as String),
           targetDate: DateTime.fromMillisecondsSinceEpoch(
             row['target_date'] as int,
             isUtc: true,
@@ -71,6 +79,7 @@ final class RememberDatabase implements DateEntries, AppTimeZoneStore {
     final database = await _open();
     await database.insert('date_entries', {
       'title': entry.title,
+      'type': entry.type.name,
       'target_date': entry.targetDate.millisecondsSinceEpoch,
     });
   }

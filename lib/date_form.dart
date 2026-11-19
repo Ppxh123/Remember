@@ -16,6 +16,7 @@ class _DateFormState extends State<DateForm> {
   final _form = GlobalKey<FormState>();
   final _title = TextEditingController();
   late DateTime _targetDate = widget.today;
+  DateEntryType _type = DateEntryType.oneTime;
   bool _saving = false;
   bool _saveFailed = false;
 
@@ -48,7 +49,11 @@ class _DateFormState extends State<DateForm> {
 
     try {
       await widget.save(
-        DateEntry(title: _title.text.trim(), targetDate: _targetDate),
+        DateEntry(
+          title: _title.text.trim(),
+          targetDate: _targetDate,
+          type: _type,
+        ),
       );
     } catch (_) {
       if (mounted) {
@@ -90,6 +95,26 @@ class _DateFormState extends State<DateForm> {
                       ),
                       validator: (value) =>
                           (value?.trim().isEmpty ?? true) ? '请输入日期名称' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<DateEntryType>(
+                      initialValue: _type,
+                      decoration: const InputDecoration(
+                        labelText: '条目类型',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: [
+                        for (final type in DateEntryType.values)
+                          DropdownMenuItem(
+                            value: type,
+                            child: Text(type.label),
+                          ),
+                      ],
+                      onChanged: _saving
+                          ? null
+                          : (type) {
+                              if (type != null) setState(() => _type = type);
+                            },
                     ),
                     const SizedBox(height: 16),
                     ListTile(

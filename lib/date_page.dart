@@ -163,7 +163,9 @@ class _DateCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final days = entry.targetDate.difference(today).inDays;
+    final dates = MaterialLocalizations.of(context);
+    final occurrence = entry.occurrenceFor(today);
+    final days = occurrence.difference(today).inDays;
     final countdown = switch (days) {
       > 0 => '还有 $days 天',
       0 => '今天',
@@ -180,13 +182,21 @@ class _DateCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(entry.title, style: theme.textTheme.titleMedium),
+            if (entry.type.repeats)
+              Text(
+                '${entry.type.label} · 公历',
+                style: theme.textTheme.labelMedium,
+              ),
             const SizedBox(height: 4),
             Text(
-              MaterialLocalizations.of(
-                context,
-              ).formatFullDate(entry.targetDate),
+              dates.formatFullDate(occurrence),
               style: theme.textTheme.bodyMedium,
             ),
+            if (entry.type.repeats)
+              Text(
+                '原始日期 ${dates.formatFullDate(entry.targetDate)}',
+                style: theme.textTheme.bodySmall,
+              ),
             const SizedBox(height: 8),
             Text(
               countdown,

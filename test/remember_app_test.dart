@@ -7,6 +7,64 @@ import 'package:remember/date_entries.dart';
 import 'package:remember/main.dart';
 
 void main() {
+  testWidgets('新建公历生日和纪念日，目标当天显示今天', (tester) async {
+    await tester.pumpWidget(
+      MainApp(
+        dateEntries: _MemoryDateEntries(),
+        timeZones: _MemoryTimeZones(),
+        now: () => DateTime.utc(2026, 2, 28),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    for (final (type, title) in [('生日', '妈妈生日'), ('纪念日', '结婚纪念日')]) {
+      await tester.tap(find.text('添加日期'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(DropdownButtonFormField<DateEntryType>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(type).last);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextFormField), title);
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+      expect(find.text(title), findsOneWidget);
+      expect(find.text('$type · 公历'), findsOneWidget);
+    }
+
+    expect(find.text('今天'), findsNWidgets(2));
+  });
+
+  testWidgets('公历二月二十九日平年取月末并在闰年还原', (tester) async {
+    final entries = _MemoryDateEntries();
+    await entries.add(
+      DateEntry(
+        title: '闰年生日',
+        targetDate: DateTime.utc(2024, 2, 29),
+        type: DateEntryType.birthday,
+      ),
+    );
+
+    for (final (today, expectedDate, countdown) in [
+      (DateTime.utc(2026, 2, 28), '2026年2月28日星期六', '今天'),
+      (DateTime.utc(2026, 3, 1), '2027年2月28日星期日', '还有 364 天'),
+      (DateTime.utc(2028, 2, 28), '2028年2月29日星期二', '还有 1 天'),
+    ]) {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpWidget(
+        MainApp(
+          dateEntries: entries,
+          timeZones: _MemoryTimeZones(),
+          now: () => today,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('原始日期 2024年2月29日星期四'), findsOneWidget);
+      expect(find.text(expectedDate), findsOneWidget);
+      expect(find.text(countdown), findsOneWidget);
+    }
+  });
+
   testWidgets('在全局设置中选择应用时区', (tester) async {
     await tester.pumpWidget(
       MainApp(dateEntries: _MemoryDateEntries(), timeZones: _MemoryTimeZones()),
