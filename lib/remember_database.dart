@@ -9,9 +9,10 @@ import 'date_entries.dart';
 import 'item_entries.dart';
 import 'item_expiry.dart';
 import 'lunar_date.dart';
+import 'reminders.dart';
 
 final class RememberDatabase
-    implements DateEntries, ItemEntries, AppTimeZoneStore {
+    implements DateEntries, ItemEntries, AppTimeZoneStore, ReminderStore {
   const RememberDatabase({this.databaseName = 'remember.db'});
 
   static const _storage = MethodChannel('io.github.ppxh123.remember/storage');
@@ -56,6 +57,17 @@ final class RememberDatabase
     )
   ''';
 
+  static const _createReminders = '''
+    CREATE TABLE reminders (
+      scope TEXT NOT NULL,
+      entry_id INTEGER NOT NULL,
+      lead_days INTEGER NOT NULL,
+      hour INTEGER NOT NULL,
+      minute INTEGER NOT NULL,
+      PRIMARY KEY (scope, entry_id)
+    )
+  ''';
+
   final String databaseName;
 
   Future<Database> _open() async {
@@ -70,7 +82,7 @@ final class RememberDatabase
 
     return openDatabase(
       path,
-      version: 6,
+      version: 7,
       onCreate: (database, _) async {
         await database.execute('''
           CREATE TABLE date_entries (
@@ -84,6 +96,7 @@ final class RememberDatabase
         await database.execute(_createSettings);
         await database.execute(_createItems);
         await database.execute(_createPhotoChunks);
+        await database.execute(_createReminders);
       },
       onUpgrade: (database, oldVersion, _) async {
         if (oldVersion < 2) await database.execute(_createSettings);
@@ -105,6 +118,7 @@ final class RememberDatabase
             await database.execute('ALTER TABLE items ADD $column');
           }
         }
+        if (oldVersion < 7) await database.execute(_createReminders);
       },
     );
   }
@@ -119,10 +133,12 @@ final class RememberDatabase
 
   DateEntry _dateEntryFromRow(Map<String, Object?> row) {
     final title = row['title'] as String;
+    final id = row['id'] as int;
     final type = DateEntryType.values.byName(row['type'] as String);
     if (row['lunar_year'] case final int year) {
       final signedMonth = row['lunar_month'] as int;
       return DateEntry.lunar(
+        id: id,
         title: title,
         type: type,
         originalDate: LunarDate(
@@ -135,6 +151,7 @@ final class RememberDatabase
     }
 
     return DateEntry(
+      id: id,
       title: title,
       type: type,
       targetDate: DateTime.fromMillisecondsSinceEpoch(
@@ -293,5 +310,45 @@ final class RememberDatabase
   Future<void> close() async {
     final database = await _open();
     await database.close();
+  }
+
+  @override
+  Future<List<ReminderRecord>> readReminders() async {
+    final database = await _open();
+    final rows = await database.query('reminders');
+    return [
+      for (final row in rows)
+        (
+          key: (
+            scope: ReminderScope.values.byName(row['scope'] as String),
+            id: row['entry_id'] as int,
+          ),
+          options: ReminderOptions(
+            leadDays: row['lead_days'] as int,
+            hour: row['hour'] as int,
+            minute: row['minute'] as int,
+          ),
+        ),
+    ];
+  }
+
+  @override
+  Future<void> writeReminder(ReminderKey key, ReminderOptions? options) async {
+    final database = await _open();
+    if (options == null) {
+      await database.delete(
+        'reminders',
+        where: 'scope = ? AND entry_id = ?',
+        whereArgs: [key.scope.name, key.id],
+      );
+      return;
+    }
+    await database.insert('reminders', {
+      'scope': key.scope.name,
+      'entry_id': key.id,
+      'lead_days': options.leadDays,
+      'hour': options.hour,
+      'minute': options.minute,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 }

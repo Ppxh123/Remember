@@ -26,6 +26,7 @@ final class DateEntry {
     required this.title,
     required DateTime targetDate,
     this.type = DateEntryType.oneTime,
+    this.id,
   }) : lunarDate = null,
        targetDate = DateTime.utc(
          targetDate.year,
@@ -37,12 +38,14 @@ final class DateEntry {
     required this.title,
     required this.type,
     required LunarDate originalDate,
+    this.id,
   }) : lunarDate = originalDate,
        targetDate = originalDate.gregorianDate {
     if (!type.repeats) throw ArgumentError.value(type, 'type');
   }
 
   final String title;
+  final int? id;
   final DateTime targetDate;
   final DateEntryType type;
   final LunarDate? lunarDate;

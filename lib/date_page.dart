@@ -3,18 +3,22 @@ import 'package:flutter/material.dart';
 import 'app_calendar.dart';
 import 'date_entries.dart';
 import 'date_form.dart';
+import 'reminder_dialog.dart';
+import 'reminders.dart';
 
 class DatePage extends StatefulWidget {
   const DatePage({
     required this.entries,
     required this.today,
     required this.timeZone,
+    this.reminders,
     super.key,
   });
 
   final DateEntries entries;
   final DateTime today;
   final AppTimeZone timeZone;
+  final Reminders? reminders;
 
   @override
   State<DatePage> createState() => _DatePageState();
@@ -96,8 +100,21 @@ class _DatePageState extends State<DatePage> {
                       );
                     }
                     return ListView.separated(
-                      itemBuilder: (_, index) =>
-                          _DateCard(entry: entries[index], today: widget.today),
+                      itemBuilder: (context, index) {
+                        final entry = entries[index];
+                        final reminders = widget.reminders;
+                        return _DateCard(
+                          entry: entry,
+                          today: widget.today,
+                          onReminder:
+                              reminders != null && reminders.supports(entry)
+                              ? () => editReminder(context, reminders, (
+                                  scope: ReminderScope.date,
+                                  id: entry.id!,
+                                ))
+                              : null,
+                        );
+                      },
                       separatorBuilder: (_, _) => const SizedBox(height: 10),
                       itemCount: entries.length,
                     );
@@ -155,10 +172,11 @@ class _EmptyDates extends StatelessWidget {
 }
 
 class _DateCard extends StatelessWidget {
-  const _DateCard({required this.entry, required this.today});
+  const _DateCard({required this.entry, required this.today, this.onReminder});
 
   final DateEntry entry;
   final DateTime today;
+  final VoidCallback? onReminder;
 
   @override
   Widget build(BuildContext context) {
@@ -204,6 +222,8 @@ class _DateCard extends StatelessWidget {
                 fontWeight: FontWeight.w700,
               ),
             ),
+            if (onReminder != null)
+              TextButton(onPressed: onReminder, child: const Text('设置提醒')),
           ],
         ),
       ),

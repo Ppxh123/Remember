@@ -5,6 +5,9 @@ import 'app_calendar.dart';
 const _calendar = MethodChannel('io.github.ppxh123.remember/device_calendar');
 const _clockEvents = EventChannel('io.github.ppxh123.remember/clock_changes');
 
+Future<String> deviceZoneName() async =>
+    (await _calendar.invokeMethod<String>('zoneName'))!;
+
 final deviceTimeChanges = _clockEvents.receiveBroadcastStream().map<void>(
   (_) {},
 );

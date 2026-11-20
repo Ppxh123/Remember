@@ -41,6 +41,10 @@ import UIKit
       binaryMessenger: messenger
     )
     deviceCalendar.setMethodCallHandler { call, result in
+      if call.method == "zoneName" {
+        result(TimeZone.autoupdatingCurrent.identifier)
+        return
+      }
       guard call.method == "dayAt" else {
         result(FlutterMethodNotImplemented)
         return

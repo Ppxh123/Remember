@@ -8,8 +8,84 @@ import 'package:remember/date_entries.dart';
 import 'package:remember/item_entries.dart';
 import 'package:remember/item_expiry.dart';
 import 'package:remember/main.dart';
+import 'package:remember/reminders.dart';
 
 void main() {
+  testWidgets('一次性日期有可编辑的提醒入口', (tester) async {
+    final entries = _MemoryDateEntries();
+    await entries.add(
+      DateEntry(id: 1, title: '取件', targetDate: DateTime.utc(2030, 7, 1)),
+    );
+    final storage = _MemoryReminders();
+    final delivery = _TestDelivery();
+    final timeZones = _MemoryTimeZones();
+    var now = DateTime.utc(2030, 6, 1);
+    final reminders = Reminders(
+      store: storage,
+      dates: entries,
+      timeZones: timeZones,
+      delivery: delivery,
+      now: () => now,
+      deviceZoneName: () async => 'America/Los_Angeles',
+    );
+
+    await tester.pumpWidget(
+      MainApp(
+        dateEntries: entries,
+        items: const _EmptyItems(),
+        timeZones: timeZones,
+        reminders: reminders,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('设置提醒'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(SwitchListTile, '启用提醒'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存提醒'));
+    await tester.pumpAndSettle();
+    expect(find.text('通知权限未开启，提醒未启用'), findsOneWidget);
+    expect(storage.records, isEmpty);
+    expect(find.text('取件'), findsOneWidget);
+
+    delivery.granted = true;
+    final key = (scope: ReminderScope.date, id: 1);
+    expect(
+      await reminders.save(key, const ReminderOptions()),
+      ReminderSaveResult.saved,
+    );
+    expect(delivery.pending.single.at.toUtc(), DateTime.utc(2030, 7, 1, 1));
+
+    await reminders.save(
+      key,
+      const ReminderOptions(leadDays: 1, hour: 10, minute: 30),
+    );
+    expect(
+      delivery.pending.single.at.toUtc(),
+      DateTime.utc(2030, 6, 30, 2, 30),
+    );
+
+    await timeZones.writeTimeZone(AppTimeZone.device);
+    await reminders.synchronize();
+    expect(
+      delivery.pending.single.at.toUtc(),
+      DateTime.utc(2030, 6, 30, 17, 30),
+    );
+    now = DateTime.utc(2030, 6, 30, 18);
+    expect(
+      await reminders.save(key, const ReminderOptions(leadDays: 2)),
+      ReminderSaveResult.passed,
+    );
+    expect(storage.records[key]?.leadDays, 1);
+    expect(
+      delivery.pending.single.at.toUtc(),
+      DateTime.utc(2030, 6, 30, 17, 30),
+    );
+    await reminders.save(key, null);
+    expect(delivery.pending, isEmpty);
+  });
+
   testWidgets('农历生日保存闰月，并显示换算后的公历日期', (tester) async {
     await tester.pumpWidget(
       MainApp(
@@ -320,4 +396,35 @@ class _EmptyItems implements ItemEntries {
 
   @override
   Future<List<Uint8List>> readItemPhotos(int itemId) async => [];
+}
+
+class _MemoryReminders implements ReminderStore {
+  final records = <ReminderKey, ReminderOptions>{};
+
+  @override
+  Future<List<ReminderRecord>> readReminders() async => [
+    for (final entry in records.entries) (key: entry.key, options: entry.value),
+  ];
+
+  @override
+  Future<void> writeReminder(ReminderKey key, ReminderOptions? options) async {
+    if (options == null) {
+      records.remove(key);
+    } else {
+      records[key] = options;
+    }
+  }
+}
+
+class _TestDelivery implements ReminderDelivery {
+  bool granted = false;
+  List<PlannedReminder> pending = [];
+
+  @override
+  Future<bool> requestPermission() async => granted;
+
+  @override
+  Future<void> replacePending(List<PlannedReminder> reminders) async {
+    pending = reminders;
+  }
 }

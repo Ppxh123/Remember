@@ -10,7 +10,9 @@ import 'device_clock.dart' as device_clock;
 import 'item_entries.dart';
 import 'item_photo_picker.dart';
 import 'items_page.dart';
+import 'notification_delivery.dart';
 import 'remember_database.dart';
+import 'reminders.dart';
 
 void main() {
   const database = RememberDatabase();
@@ -18,6 +20,13 @@ void main() {
     MainApp(
       dateEntries: database,
       items: database,
+      reminders: Reminders(
+        store: database,
+        dates: database,
+        timeZones: database,
+        delivery: NotificationDelivery(),
+        deviceZoneName: device_clock.deviceZoneName,
+      ),
       timeZones: database,
       deviceTimeChanges: device_clock.deviceTimeChanges,
     ),
@@ -30,6 +39,7 @@ class MainApp extends StatelessWidget {
     required this.dateEntries,
     required this.items,
     required this.timeZones,
+    this.reminders,
     this.pickPhotos = pickItemPhotos,
     this.now = DateTime.now,
     this.deviceDayAt = device_clock.deviceDayAt,
@@ -38,6 +48,7 @@ class MainApp extends StatelessWidget {
 
   final DateEntries dateEntries;
   final ItemEntries items;
+  final Reminders? reminders;
   final PickItemPhotos pickPhotos;
   final AppTimeZoneStore timeZones;
   final DeviceDayAt deviceDayAt;
@@ -80,6 +91,7 @@ class MainApp extends StatelessWidget {
       home: _Home(
         entries: dateEntries,
         items: items,
+        reminders: reminders,
         pickPhotos: pickPhotos,
         calendarStore: timeZones,
         now: now,
@@ -94,6 +106,7 @@ class _Home extends StatefulWidget {
   const _Home({
     required this.entries,
     required this.items,
+    required this.reminders,
     required this.pickPhotos,
     required this.calendarStore,
     required this.now,
@@ -103,6 +116,7 @@ class _Home extends StatefulWidget {
 
   final DateEntries entries;
   final ItemEntries items;
+  final Reminders? reminders;
   final PickItemPhotos pickPhotos;
   final AppTimeZoneStore calendarStore;
   final DeviceDayAt deviceDayAt;
@@ -130,7 +144,19 @@ class _HomeState extends State<_Home> {
     );
     _lifecycle = AppLifecycleListener(onResume: _calendar.refresh);
     _clockChanges = widget.deviceTimeChanges.listen((_) => _calendar.refresh());
+    _calendar.addListener(_synchronizeReminders);
     unawaited(_calendar.load());
+  }
+
+  void _synchronizeReminders() {
+    final zone = _calendar.current?.timeZone;
+    final reminders = widget.reminders;
+    if (zone == null || reminders == null) return;
+    unawaited(
+      reminders.synchronize().catchError((Object error) {
+        debugPrint('Unable to synchronize reminders: $error');
+      }),
+    );
   }
 
   @override
@@ -192,6 +218,7 @@ class _HomeState extends State<_Home> {
       if (current != null)
         DatePage(
           entries: widget.entries,
+          reminders: widget.reminders,
           today: current.today,
           timeZone: current.timeZone,
         )

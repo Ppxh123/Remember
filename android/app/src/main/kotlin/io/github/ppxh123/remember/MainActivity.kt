@@ -22,6 +22,10 @@ class MainActivity : FlutterActivity() {
         val messenger = flutterEngine.dartExecutor.binaryMessenger
 
         MethodChannel(messenger, calendarChannel).setMethodCallHandler { call, result ->
+            if (call.method == "zoneName") {
+                result.success(java.util.TimeZone.getDefault().id)
+                return@setMethodCallHandler
+            }
             val instant = call.arguments as? Number
             if (call.method != "dayAt") {
                 result.notImplemented()
