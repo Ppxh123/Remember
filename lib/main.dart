@@ -7,6 +7,9 @@ import 'app_calendar.dart';
 import 'date_entries.dart';
 import 'date_page.dart';
 import 'device_clock.dart' as device_clock;
+import 'item_entries.dart';
+import 'item_photo_picker.dart';
+import 'items_page.dart';
 import 'remember_database.dart';
 
 void main() {
@@ -14,6 +17,7 @@ void main() {
   runApp(
     MainApp(
       dateEntries: database,
+      items: database,
       timeZones: database,
       deviceTimeChanges: device_clock.deviceTimeChanges,
     ),
@@ -24,13 +28,17 @@ class MainApp extends StatelessWidget {
   const MainApp({
     super.key,
     required this.dateEntries,
+    required this.items,
     required this.timeZones,
+    this.pickPhotos = pickItemPhotos,
     this.now = DateTime.now,
     this.deviceDayAt = device_clock.deviceDayAt,
     this.deviceTimeChanges = const Stream<void>.empty(),
   });
 
   final DateEntries dateEntries;
+  final ItemEntries items;
+  final PickItemPhotos pickPhotos;
   final AppTimeZoneStore timeZones;
   final DeviceDayAt deviceDayAt;
   final Stream<void> deviceTimeChanges;
@@ -71,6 +79,8 @@ class MainApp extends StatelessWidget {
       ),
       home: _Home(
         entries: dateEntries,
+        items: items,
+        pickPhotos: pickPhotos,
         calendarStore: timeZones,
         now: now,
         deviceDayAt: deviceDayAt,
@@ -83,6 +93,8 @@ class MainApp extends StatelessWidget {
 class _Home extends StatefulWidget {
   const _Home({
     required this.entries,
+    required this.items,
+    required this.pickPhotos,
     required this.calendarStore,
     required this.now,
     required this.deviceDayAt,
@@ -90,6 +102,8 @@ class _Home extends StatefulWidget {
   });
 
   final DateEntries entries;
+  final ItemEntries items;
+  final PickItemPhotos pickPhotos;
   final AppTimeZoneStore calendarStore;
   final DeviceDayAt deviceDayAt;
   final Stream<void> deviceTimeChanges;
@@ -190,7 +204,14 @@ class _HomeState extends State<_Home> {
         )
       else
         const Center(child: CircularProgressIndicator()),
-      const _ModuleEntry(icon: Icons.inventory_2_outlined, label: '物品记录'),
+      if (current != null)
+        ItemsPage(
+          entries: widget.items,
+          today: current.today,
+          pickPhotos: widget.pickPhotos,
+        )
+      else
+        const SizedBox.shrink(),
       const _ModuleEntry(icon: Icons.lock_outline_rounded, label: '凭据保险箱'),
     ];
 

@@ -25,7 +25,7 @@ void main() {
     };
 
     await tester.pumpWidget(
-      MainApp(dateEntries: db, timeZones: db, now: () => today),
+      MainApp(dateEntries: db, items: db, timeZones: db, now: () => today),
     );
     await tester.pumpAndSettle();
 

@@ -25,6 +25,7 @@ void main() {
     await tester.pumpWidget(
       MainApp(
         dateEntries: entries,
+        items: entries,
         timeZones: entries,
         deviceTimeChanges: deviceTimeChanges,
         now: () => DateTime.utc(2026, 11, 19),
@@ -68,6 +69,7 @@ Future<void> _verifyAfterRestart(
   await tester.pumpWidget(
     MainApp(
       dateEntries: entries,
+      items: entries,
       timeZones: entries,
       deviceTimeChanges: deviceTimeChanges,
       now: () => DateTime.utc(2026, 11, 20),

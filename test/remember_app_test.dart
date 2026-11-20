@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:remember/app_calendar.dart';
 import 'package:remember/date_entries.dart';
+import 'package:remember/item_entries.dart';
 import 'package:remember/main.dart';
 
 void main() {
@@ -11,6 +13,7 @@ void main() {
     await tester.pumpWidget(
       MainApp(
         dateEntries: _MemoryDateEntries(),
+        items: const _EmptyItems(),
         timeZones: _MemoryTimeZones(),
         now: () => DateTime.utc(2023, 3, 31),
       ),
@@ -44,6 +47,7 @@ void main() {
     await tester.pumpWidget(
       MainApp(
         dateEntries: _MemoryDateEntries(),
+        items: const _EmptyItems(),
         timeZones: _MemoryTimeZones(),
         now: () => DateTime.utc(1899, 6, 1),
       ),
@@ -71,6 +75,7 @@ void main() {
     await tester.pumpWidget(
       MainApp(
         dateEntries: _MemoryDateEntries(),
+        items: const _EmptyItems(),
         timeZones: _MemoryTimeZones(),
         now: () => DateTime.utc(2026, 2, 28),
       ),
@@ -113,6 +118,7 @@ void main() {
       await tester.pumpWidget(
         MainApp(
           dateEntries: entries,
+          items: const _EmptyItems(),
           timeZones: _MemoryTimeZones(),
           now: () => today,
         ),
@@ -127,7 +133,11 @@ void main() {
 
   testWidgets('在全局设置中选择应用时区', (tester) async {
     await tester.pumpWidget(
-      MainApp(dateEntries: _MemoryDateEntries(), timeZones: _MemoryTimeZones()),
+      MainApp(
+        dateEntries: _MemoryDateEntries(),
+        items: const _EmptyItems(),
+        timeZones: _MemoryTimeZones(),
+      ),
     );
     await tester.pumpAndSettle();
     expect(find.text('北京时间'), findsOneWidget);
@@ -151,6 +161,7 @@ void main() {
     await tester.pumpWidget(
       MainApp(
         dateEntries: entries,
+        items: const _EmptyItems(),
         timeZones: timeZones,
         now: () => DateTime.utc(2026, 11, 19, 16, 30),
         deviceTimeChanges: changes.stream,
@@ -202,7 +213,11 @@ void main() {
 
   testWidgets('打开应用直接进入日期页，并可切换三个入口', (tester) async {
     await tester.pumpWidget(
-      MainApp(dateEntries: _MemoryDateEntries(), timeZones: _MemoryTimeZones()),
+      MainApp(
+        dateEntries: _MemoryDateEntries(),
+        items: const _EmptyItems(),
+        timeZones: _MemoryTimeZones(),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -211,7 +226,7 @@ void main() {
 
     await tester.tap(find.widgetWithText(NavigationDestination, '物品'));
     await tester.pumpAndSettle();
-    expect(find.text('物品记录将在后续版本开放'), findsOneWidget);
+    expect(find.text('还没有物品记录'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(NavigationDestination, '凭据保险箱'));
     await tester.pumpAndSettle();
@@ -227,6 +242,7 @@ void main() {
     await tester.pumpWidget(
       MainApp(
         dateEntries: _MemoryDateEntries(),
+        items: const _EmptyItems(),
         timeZones: _MemoryTimeZones(),
         now: () => now,
       ),
@@ -287,4 +303,17 @@ class _MemoryTimeZones implements AppTimeZoneStore {
   Future<void> writeTimeZone(AppTimeZone timeZone) async {
     _selected = timeZone;
   }
+}
+
+class _EmptyItems implements ItemEntries {
+  const _EmptyItems();
+
+  @override
+  Future<List<ItemEntry>> readItems() async => [];
+
+  @override
+  Future<void> addItem(ItemDraft item) async => throw UnimplementedError();
+
+  @override
+  Future<List<Uint8List>> readItemPhotos(int itemId) async => [];
 }

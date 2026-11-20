@@ -60,7 +60,7 @@ Future<void> _openApp(
   DateTime now,
 ) async {
   await tester.pumpWidget(
-    MainApp(dateEntries: store, timeZones: store, now: () => now),
+    MainApp(dateEntries: store, items: store, timeZones: store, now: () => now),
   );
   await tester.pumpAndSettle();
 }
