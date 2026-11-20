@@ -7,6 +7,7 @@ import 'package:sqflite/sqflite.dart';
 import 'app_calendar.dart';
 import 'date_entries.dart';
 import 'item_entries.dart';
+import 'item_expiry.dart';
 import 'lunar_date.dart';
 
 final class RememberDatabase
@@ -28,11 +29,20 @@ final class RememberDatabase
     )
   ''';
 
-  static const _createItems = '''
+  static const _expiryColumns = [
+    'expires_on INTEGER',
+    'produced_on INTEGER',
+    'shelf_life_amount INTEGER',
+    'shelf_life_unit TEXT',
+  ];
+
+  static final _createItems =
+      '''
     CREATE TABLE items (
       id INTEGER PRIMARY KEY,
       name TEXT NOT NULL,
-      purchased_on INTEGER
+      purchased_on INTEGER,
+      ${_expiryColumns.join(', ')}
     )
   ''';
 
@@ -60,7 +70,7 @@ final class RememberDatabase
 
     return openDatabase(
       path,
-      version: 5,
+      version: 6,
       onCreate: (database, _) async {
         await database.execute('''
           CREATE TABLE date_entries (
@@ -90,6 +100,10 @@ final class RememberDatabase
         if (oldVersion < 5) {
           await database.execute(_createItems);
           await database.execute(_createPhotoChunks);
+        } else if (oldVersion < 6) {
+          for (final column in _expiryColumns) {
+            await database.execute('ALTER TABLE items ADD $column');
+          }
         }
       },
     );
@@ -152,6 +166,7 @@ final class RememberDatabase
         ItemEntry(
           id: row['id'] as int,
           name: row['name'] as String,
+          expiry: _readExpiry(row),
           purchasedOn: switch (row['purchased_on']) {
             final int day => DateTime.fromMillisecondsSinceEpoch(
               day,
@@ -170,6 +185,7 @@ final class RememberDatabase
       final itemId = await transaction.insert('items', {
         'name': item.name,
         'purchased_on': item.purchasedOn?.millisecondsSinceEpoch,
+        ..._expiryValues(item.expiry),
       });
       final batch = transaction.batch();
       // Each row fits comfortably inside Android's CursorWindow.
@@ -189,6 +205,44 @@ final class RememberDatabase
       }
       await batch.commit(noResult: true);
     });
+  }
+
+  @override
+  Future<void> updateItemExpiry(int itemId, ItemExpiry? expiry) async {
+    final database = await _open();
+    await database.update(
+      'items',
+      _expiryValues(expiry),
+      where: 'id = ?',
+      whereArgs: [itemId],
+    );
+  }
+
+  Map<String, Object?> _expiryValues(ItemExpiry? expiry) => {
+    'expires_on': expiry?.date.millisecondsSinceEpoch,
+    'produced_on': expiry?.shelfLife?.producedOn.millisecondsSinceEpoch,
+    'shelf_life_amount': expiry?.shelfLife?.amount,
+    'shelf_life_unit': expiry?.shelfLife?.unit.name,
+  };
+
+  ItemExpiry? _readExpiry(Map<String, Object?> row) {
+    final expiresOn = row['expires_on'] as int?;
+    if (expiresOn == null) return null;
+    if (row['shelf_life_unit'] case final String unit) {
+      return ItemExpiry.calculated(
+        ShelfLife(
+          producedOn: DateTime.fromMillisecondsSinceEpoch(
+            row['produced_on'] as int,
+            isUtc: true,
+          ),
+          amount: row['shelf_life_amount'] as int,
+          unit: ShelfLifeUnit.values.byName(unit),
+        ),
+      );
+    }
+    return ItemExpiry.direct(
+      DateTime.fromMillisecondsSinceEpoch(expiresOn, isUtc: true),
+    );
   }
 
   @override

@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import 'item_entries.dart';
+import 'item_expiry.dart';
+import 'item_expiry_dialog.dart';
 import 'item_form.dart';
 import 'item_photo_picker.dart';
 
@@ -49,7 +51,15 @@ class _ItemsPageState extends State<ItemsPage> {
     final photos = widget.entries.readItemPhotos(item.id);
     Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) => _ItemDetails(item: item, photos: photos),
+        builder: (_) => _ItemDetails(
+          item: item,
+          photos: photos,
+          today: widget.today,
+          onUpdate: (expiry) async {
+            await widget.entries.updateItemExpiry(item.id, expiry);
+            if (mounted) _reload();
+          },
+        ),
       ),
     );
   }
@@ -95,10 +105,21 @@ class _ItemsPageState extends State<ItemsPage> {
                           child: ListTile(
                             leading: const Icon(Icons.inventory_2_outlined),
                             title: Text(item.name),
-                            subtitle: item.purchasedOn == null
+                            subtitle:
+                                item.purchasedOn == null && item.expiry == null
                                 ? null
-                                : Text(
-                                    _purchaseLabel(context, item.purchasedOn!),
+                                : Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      if (item.purchasedOn
+                                          case final purchased?)
+                                        Text(
+                                          _purchaseLabel(context, purchased),
+                                        ),
+                                      if (item.expiry case final expiry?)
+                                        Text(expiry.statusOn(widget.today)),
+                                    ],
                                   ),
                             trailing: const Icon(Icons.chevron_right),
                             onTap: () => _open(item),
@@ -129,38 +150,97 @@ class _ItemsPageState extends State<ItemsPage> {
 String _purchaseLabel(BuildContext context, DateTime date) =>
     '购入日期 ${MaterialLocalizations.of(context).formatFullDate(date)}';
 
-class _ItemDetails extends StatelessWidget {
-  const _ItemDetails({required this.item, required this.photos});
+class _ItemDetails extends StatefulWidget {
+  const _ItemDetails({
+    required this.item,
+    required this.photos,
+    required this.today,
+    required this.onUpdate,
+  });
 
   final ItemEntry item;
   final Future<List<Uint8List>> photos;
+  final DateTime today;
+  final Future<void> Function(ItemExpiry?) onUpdate;
+
+  @override
+  State<_ItemDetails> createState() => _ItemDetailsState();
+}
+
+class _ItemDetailsState extends State<_ItemDetails> {
+  late ItemExpiry? _expiry = widget.item.expiry;
+  bool _saving = false;
+
+  Future<void> _editExpiry() async {
+    final selected = await showDialog<ExpiryEdit>(
+      context: context,
+      builder: (_) =>
+          ItemExpiryDialog(today: widget.today, initialExpiry: _expiry),
+    );
+    if (selected == null || !mounted) return;
+    setState(() => _saving = true);
+    try {
+      await widget.onUpdate(selected.expiry);
+      if (mounted) setState(() => _expiry = selected.expiry);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('保存到期日失败，请重试')));
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(item.name)),
+      appBar: AppBar(title: Text(widget.item.name)),
       body: SafeArea(
         child: FutureBuilder(
-          future: photos,
+          future: widget.photos,
           builder: (context, snapshot) {
-            if (snapshot.hasError) return const Text('照片读取失败，请重新打开物品');
-            final values = snapshot.data;
-            if (values == null) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            final purchased = item.purchasedOn;
-            final headerCount = purchased == null ? 0 : 1;
+            final values = snapshot.data ?? [];
+            final showPhotoNotice = snapshot.hasError || !snapshot.hasData;
+            final purchased = widget.item.purchasedOn;
+            final expiry = _expiry;
+            final shelfLife = expiry?.shelfLife;
             return ListView.builder(
               padding: const EdgeInsets.all(20),
-              itemCount: headerCount + values.length,
+              itemCount: 1 + values.length + (showPhotoNotice ? 1 : 0),
               itemBuilder: (context, index) {
-                if (index < headerCount) {
+                if (index == 0) {
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
-                    child: Text(_purchaseLabel(context, purchased!)),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (purchased != null)
+                          Text(_purchaseLabel(context, purchased)),
+                        if (expiry != null) Text(expiryLabel(context, expiry)),
+                        if (shelfLife != null) ...[
+                          Text(
+                            '生产日期 ${MaterialLocalizations.of(context).formatFullDate(shelfLife.producedOn)}',
+                          ),
+                          Text(
+                            '保质期 ${shelfLife.amount} ${shelfLife.unit.label}',
+                          ),
+                        ],
+                        OutlinedButton(
+                          onPressed: _saving ? null : _editExpiry,
+                          child: const Text('设置到期日'),
+                        ),
+                      ],
+                    ),
                   );
                 }
-                final photoIndex = index - headerCount;
+                if (showPhotoNotice && index == 1) {
+                  return snapshot.hasError
+                      ? const Text('照片读取失败，请重新打开物品')
+                      : const Center(child: CircularProgressIndicator());
+                }
+                final photoIndex = index - 1;
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 12),
                   child: ClipRRect(

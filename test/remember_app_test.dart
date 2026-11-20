@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:remember/app_calendar.dart';
 import 'package:remember/date_entries.dart';
 import 'package:remember/item_entries.dart';
+import 'package:remember/item_expiry.dart';
 import 'package:remember/main.dart';
 
 void main() {
@@ -313,6 +314,9 @@ class _EmptyItems implements ItemEntries {
 
   @override
   Future<void> addItem(ItemDraft item) async => throw UnimplementedError();
+
+  @override
+  Future<void> updateItemExpiry(int itemId, ItemExpiry? expiry) async {}
 
   @override
   Future<List<Uint8List>> readItemPhotos(int itemId) async => [];

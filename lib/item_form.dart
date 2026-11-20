@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import 'item_entries.dart';
+import 'item_expiry.dart';
+import 'item_expiry_dialog.dart';
 import 'item_photo_picker.dart';
 
 class ItemForm extends StatefulWidget {
@@ -27,6 +29,7 @@ class _ItemFormState extends State<ItemForm> {
   final _name = TextEditingController();
   final _photos = <Uint8List>[];
   DateTime? _purchasedOn;
+  ItemExpiry? _expiry;
   bool _busy = true;
   String? _error;
 
@@ -86,6 +89,16 @@ class _ItemFormState extends State<ItemForm> {
     }
   }
 
+  Future<void> _chooseExpiry() async {
+    FocusScope.of(context).unfocus();
+    final selected = await showDialog<ExpiryEdit>(
+      context: context,
+      builder: (_) =>
+          ItemExpiryDialog(today: widget.today, initialExpiry: _expiry),
+    );
+    if (mounted && selected != null) setState(() => _expiry = selected.expiry);
+  }
+
   Future<void> _save() async {
     if (_busy || !_form.currentState!.validate()) return;
     setState(() {
@@ -97,6 +110,7 @@ class _ItemFormState extends State<ItemForm> {
         ItemDraft(
           name: _name.text.trim(),
           purchasedOn: _purchasedOn,
+          expiry: _expiry,
           photos: List.of(_photos),
         ),
       );
@@ -159,6 +173,14 @@ class _ItemFormState extends State<ItemForm> {
                             ),
                     ),
                     const SizedBox(height: 16),
+                    ListTile(
+                      leading: const Icon(Icons.event_available_outlined),
+                      title: const Text('设置到期日'),
+                      subtitle: Text(
+                        _expiry == null ? '选填' : expiryLabel(context, _expiry!),
+                      ),
+                      onTap: _busy ? null : _chooseExpiry,
+                    ),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,

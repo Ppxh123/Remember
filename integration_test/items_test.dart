@@ -70,6 +70,13 @@ void main() {
     expect(find.text('购入日期 2026年6月1日星期一'), findsOneWidget);
     await tester.tap(find.text('相机'));
     await tester.pumpAndSettle();
+    if (const bool.fromEnvironment('REMEMBER_EDIT_EXPIRY')) {
+      await tester.tap(find.text('设置到期日'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('确认到期日'));
+      await tester.pumpAndSettle();
+      expect(find.text('到期日 2026年6月1日星期一'), findsOneWidget);
+    }
     final photos = tester.widgetList<Image>(find.byType(Image)).toList();
     expect(photos, hasLength(2));
     expect((photos[0].image as MemoryImage).bytes, largePhoto);
