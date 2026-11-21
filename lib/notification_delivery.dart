@@ -7,8 +7,10 @@ import 'package:timezone/timezone.dart' as tz;
 import 'reminders.dart';
 
 final class NotificationDelivery implements ReminderDelivery {
-  NotificationDelivery({String namespace = 'remember-reminder:'})
+  NotificationDelivery({this.history, String namespace = 'remember-reminder:'})
     : _tag = namespace;
+
+  final ReminderHistory? history;
 
   final _plugin = FlutterLocalNotificationsPlugin();
   late final _ready = _plugin.initialize(
@@ -60,18 +62,34 @@ final class NotificationDelivery implements ReminderDelivery {
     final expected = {for (final reminder in reminders) reminder.id: reminder};
     if (!enabled) expected.clear();
     final pending = await _plugin.pendingNotificationRequests();
+    final scheduled = await history?.readScheduledOccurrences() ?? {};
+    final pendingIds = <int>{};
     for (final current in pending) {
       if (!(current.payload?.startsWith(_tag) ?? false)) continue;
+      pendingIds.add(current.id);
       final reminder = expected[current.id];
       if (reminder != null && current.payload == _payload(reminder)) {
         expected.remove(current.id);
+        final previous = scheduled[current.id];
+        if (previous?.key != reminder.occurrenceKey ||
+            previous?.milliseconds != reminder.at.millisecondsSinceEpoch) {
+          await _record(reminder);
+        }
       } else {
         await _plugin.cancel(id: current.id);
+        await history?.recordScheduledOccurrence(current.id, null);
       }
     }
 
     for (final reminder in expected.values) {
       if (!reminder.at.isAfter(DateTime.now())) continue;
+      final previous = scheduled[reminder.id];
+      if (!pendingIds.contains(reminder.id) &&
+          previous != null &&
+          previous.key == reminder.occurrenceKey &&
+          previous.milliseconds <= DateTime.now().millisecondsSinceEpoch) {
+        continue;
+      }
       await _plugin.zonedSchedule(
         id: reminder.id,
         title: reminder.title,
@@ -88,6 +106,16 @@ final class NotificationDelivery implements ReminderDelivery {
           iOS: DarwinNotificationDetails(),
         ),
       );
+      await _record(reminder);
+    }
+  }
+
+  Future<void> _record(PlannedReminder reminder) async {
+    if (reminder.occurrenceKey case final key?) {
+      await history?.recordScheduledOccurrence(reminder.id, (
+        key: key,
+        milliseconds: reminder.at.millisecondsSinceEpoch,
+      ));
     }
   }
 

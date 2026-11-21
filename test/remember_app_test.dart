@@ -8,9 +8,102 @@ import 'package:remember/date_entries.dart';
 import 'package:remember/item_entries.dart';
 import 'package:remember/item_expiry.dart';
 import 'package:remember/main.dart';
+import 'package:remember/lunar_date.dart';
 import 'package:remember/reminders.dart';
 
 void main() {
+  test('年度提醒按公历闰日和农历闰月分别预排并滚动', () async {
+    final dates = _MemoryDateEntries();
+    await dates.add(
+      DateEntry(
+        id: 11,
+        title: '公历生日',
+        targetDate: DateTime.utc(2020, 2, 29),
+        type: DateEntryType.birthday,
+      ),
+    );
+    await dates.add(
+      DateEntry.lunar(
+        id: 12,
+        title: '闰月纪念日',
+        type: DateEntryType.anniversary,
+        originalDate: LunarDate(
+          year: 2023,
+          month: 2,
+          day: 10,
+          isLeapMonth: true,
+        ),
+      ),
+    );
+    await dates.add(
+      DateEntry.lunar(
+        id: 13,
+        title: '普通月纪念日',
+        type: DateEntryType.anniversary,
+        originalDate: LunarDate(year: 2023, month: 2, day: 10),
+      ),
+    );
+    await dates.add(
+      DateEntry.lunar(
+        id: 14,
+        title: '月底纪念日',
+        type: DateEntryType.anniversary,
+        originalDate: LunarDate(year: 2023, month: 4, day: 30),
+      ),
+    );
+    final store = _MemoryReminders();
+    final timeZones = _MemoryTimeZones();
+    final delivery = _TestDelivery()..granted = true;
+    var now = DateTime.utc(2024, 2, 28);
+    final reminders = Reminders(
+      store: store,
+      dates: dates,
+      timeZones: timeZones,
+      delivery: delivery,
+      deviceDayAt: _dayInFixtureZone,
+      deviceInstantAt: _instantInFixtureZone,
+      now: () => now,
+    );
+    const leapMonth = (scope: ReminderScope.date, id: 12);
+    for (final id in [11, 12, 13, 14]) {
+      expect(
+        await reminders.save((
+          scope: ReminderScope.date,
+          id: id,
+        ), const ReminderOptions()),
+        ReminderSaveResult.saved,
+      );
+    }
+    List<DateTime> future(String title) => [
+      for (final plan in delivery.pending)
+        if (plan.title == title && plan.at.isAfter(now)) plan.at.toUtc(),
+    ];
+    expect(future('公历生日').first, DateTime.utc(2024, 2, 29, 1));
+    expect(future('公历生日')[1], DateTime.utc(2025, 2, 28, 1));
+    expect(future('闰月纪念日').first, DateTime.utc(2024, 3, 19, 1));
+    expect(future('普通月纪念日').first, DateTime.utc(2024, 3, 19, 1));
+    expect(future('月底纪念日').first, DateTime.utc(2024, 6, 5, 1));
+    now = DateTime.utc(2042, 3, 2);
+    await reminders.synchronize();
+    expect(future('闰月纪念日').first, DateTime.utc(2042, 3, 31, 1));
+    expect(future('普通月纪念日').first.year, 2043);
+    expect(
+      await reminders.save(
+        leapMonth,
+        const ReminderOptions(leadDays: 1, hour: 10),
+      ),
+      ReminderSaveResult.saved,
+    );
+    expect(future('闰月纪念日').first, DateTime.utc(2042, 3, 30, 2));
+    await timeZones.writeTimeZone(AppTimeZone.device);
+    await reminders.synchronize();
+    expect(future('闰月纪念日').first, DateTime.utc(2042, 3, 30, 17));
+    expect(
+      delivery.pending.map((plan) => plan.id).toSet(),
+      hasLength(delivery.pending.length),
+    );
+  });
+
   testWidgets('一次性日期有可编辑的提醒入口', (tester) async {
     final entries = _MemoryDateEntries();
     await entries.add(
@@ -26,7 +119,8 @@ void main() {
       timeZones: timeZones,
       delivery: delivery,
       now: () => now,
-      deviceZoneName: () async => 'America/Los_Angeles',
+      deviceDayAt: _dayInFixtureZone,
+      deviceInstantAt: _instantInFixtureZone,
     );
 
     await tester.pumpWidget(
@@ -428,3 +522,17 @@ class _TestDelivery implements ReminderDelivery {
     pending = reminders;
   }
 }
+
+Future<CalendarDay> _dayInFixtureZone(DateTime instant) async {
+  final wallTime = instant.toUtc().subtract(const Duration(hours: 7));
+  return (
+    date: DateTime.utc(wallTime.year, wallTime.month, wallTime.day),
+    nextStart: DateTime.utc(wallTime.year, wallTime.month, wallTime.day + 1, 7),
+  );
+}
+
+Future<DateTime> _instantInFixtureZone(
+  DateTime date,
+  int hour,
+  int minute,
+) async => DateTime.utc(date.year, date.month, date.day, hour + 7, minute);

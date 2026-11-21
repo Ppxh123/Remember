@@ -53,6 +53,9 @@ final class DateEntry {
   DateEntryCalendar get calendar =>
       lunarDate == null ? DateEntryCalendar.gregorian : DateEntryCalendar.lunar;
 
+  int yearOfOccurrence(DateTime date) =>
+      lunarDate == null ? date.year : LunarDate.yearOn(date);
+
   DateTime occurrenceFor(DateTime today) {
     if (!type.repeats || !targetDate.isBefore(today)) return targetDate;
     if (lunarDate case final lunar?) return lunar.dateAtOrAfter(today);

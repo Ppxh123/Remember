@@ -41,8 +41,16 @@ import UIKit
       binaryMessenger: messenger
     )
     deviceCalendar.setMethodCallHandler { call, result in
-      if call.method == "zoneName" {
-        result(TimeZone.autoupdatingCurrent.identifier)
+      var calendar = Calendar(identifier: .gregorian)
+      calendar.timeZone = .autoupdatingCurrent
+      if call.method == "instantAt" {
+        guard let parts = call.arguments as? [Int], parts.count == 5,
+          let instant = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: parts[3], minute: parts[4]))
+        else {
+          result(FlutterError(code: "invalid_time", message: nil, details: nil))
+          return
+        }
+        result(Int64((instant.timeIntervalSince1970 * 1000).rounded()))
         return
       }
       guard call.method == "dayAt" else {
@@ -55,8 +63,6 @@ import UIKit
       }
 
       let instant = Date(timeIntervalSince1970: milliseconds.doubleValue / 1000)
-      var calendar = Calendar(identifier: .gregorian)
-      calendar.timeZone = .autoupdatingCurrent
       let date = calendar.dateComponents([.year, .month, .day], from: instant)
       guard let year = date.year, let month = date.month, let day = date.day,
         let interval = calendar.dateInterval(of: .day, for: instant)

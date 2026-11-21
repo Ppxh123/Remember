@@ -12,7 +12,12 @@ import 'lunar_date.dart';
 import 'reminders.dart';
 
 final class RememberDatabase
-    implements DateEntries, ItemEntries, AppTimeZoneStore, ReminderStore {
+    implements
+        DateEntries,
+        ItemEntries,
+        AppTimeZoneStore,
+        ReminderStore,
+        ReminderHistory {
   const RememberDatabase({this.databaseName = 'remember.db'});
 
   static const _storage = MethodChannel('io.github.ppxh123.remember/storage');
@@ -68,6 +73,14 @@ final class RememberDatabase
     )
   ''';
 
+  static const _createReminderHistory = '''
+    CREATE TABLE reminder_history (
+      notification_id INTEGER PRIMARY KEY,
+      occurrence TEXT NOT NULL,
+      scheduled_at INTEGER NOT NULL
+    )
+  ''';
+
   final String databaseName;
 
   Future<Database> _open() async {
@@ -82,7 +95,7 @@ final class RememberDatabase
 
     return openDatabase(
       path,
-      version: 7,
+      version: 8,
       onCreate: (database, _) async {
         await database.execute('''
           CREATE TABLE date_entries (
@@ -97,6 +110,7 @@ final class RememberDatabase
         await database.execute(_createItems);
         await database.execute(_createPhotoChunks);
         await database.execute(_createReminders);
+        await database.execute(_createReminderHistory);
       },
       onUpgrade: (database, oldVersion, _) async {
         if (oldVersion < 2) await database.execute(_createSettings);
@@ -119,6 +133,7 @@ final class RememberDatabase
           }
         }
         if (oldVersion < 7) await database.execute(_createReminders);
+        if (oldVersion < 8) await database.execute(_createReminderHistory);
       },
     );
   }
@@ -349,6 +364,39 @@ final class RememberDatabase
       'lead_days': options.leadDays,
       'hour': options.hour,
       'minute': options.minute,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  @override
+  Future<Map<int, ScheduledOccurrence>> readScheduledOccurrences() async {
+    final database = await _open();
+    return {
+      for (final row in await database.query('reminder_history'))
+        row['notification_id'] as int: (
+          key: row['occurrence'] as String,
+          milliseconds: row['scheduled_at'] as int,
+        ),
+    };
+  }
+
+  @override
+  Future<void> recordScheduledOccurrence(
+    int id,
+    ScheduledOccurrence? occurrence,
+  ) async {
+    final database = await _open();
+    if (occurrence == null) {
+      await database.delete(
+        'reminder_history',
+        where: 'notification_id = ?',
+        whereArgs: [id],
+      );
+      return;
+    }
+    await database.insert('reminder_history', {
+      'notification_id': id,
+      'occurrence': occurrence.key,
+      'scheduled_at': occurrence.milliseconds,
     }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 }

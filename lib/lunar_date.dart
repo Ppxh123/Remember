@@ -73,6 +73,8 @@ final class LunarDate {
   static calendar.Lunar _lunarOn(DateTime date) =>
       calendar.Solar.fromYmd(date.year, date.month, date.day).getLunar();
 
+  static int yearOn(DateTime date) => _lunarOn(date).getYear();
+
   static DateTime _gregorian(int year, int month, int day) {
     final solar = calendar.Lunar.fromYmd(year, month, day).getSolar();
     return DateTime.utc(solar.getYear(), solar.getMonth(), solar.getDay());

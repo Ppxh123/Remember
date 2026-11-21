@@ -5,8 +5,17 @@ import 'app_calendar.dart';
 const _calendar = MethodChannel('io.github.ppxh123.remember/device_calendar');
 const _clockEvents = EventChannel('io.github.ppxh123.remember/clock_changes');
 
-Future<String> deviceZoneName() async =>
-    (await _calendar.invokeMethod<String>('zoneName'))!;
+Future<DateTime> deviceInstantAt(DateTime date, int hour, int minute) async {
+  final milliseconds = await _calendar.invokeMethod<int>('instantAt', [
+    date.year,
+    date.month,
+    date.day,
+    hour,
+    minute,
+  ]);
+  if (milliseconds == null) throw StateError('Device calendar unavailable');
+  return DateTime.fromMillisecondsSinceEpoch(milliseconds, isUtc: true);
+}
 
 final deviceTimeChanges = _clockEvents.receiveBroadcastStream().map<void>(
   (_) {},

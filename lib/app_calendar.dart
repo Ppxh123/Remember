@@ -18,14 +18,25 @@ abstract interface class AppTimeZoneStore {
 
 typedef CalendarDay = ({DateTime date, DateTime nextStart});
 typedef DeviceDayAt = Future<CalendarDay> Function(DateTime instant);
+typedef DeviceInstantAt =
+    Future<DateTime> Function(DateTime date, int hour, int minute);
+
+const _beijingOffset = Duration(hours: 8);
+
+DateTime beijingInstantAt(DateTime date, int hour, int minute) => DateTime.utc(
+  date.year,
+  date.month,
+  date.day,
+  hour,
+  minute,
+).subtract(_beijingOffset);
 
 CalendarDay beijingDayAt(DateTime instant) {
-  const offset = Duration(hours: 8);
-  final local = instant.toUtc().add(offset);
+  final local = instant.toUtc().add(_beijingOffset);
   final date = DateTime.utc(local.year, local.month, local.day);
   return (
     date: date,
-    nextStart: date.add(const Duration(days: 1)).subtract(offset),
+    nextStart: date.add(const Duration(days: 1)).subtract(_beijingOffset),
   );
 }
 

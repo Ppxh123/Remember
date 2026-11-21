@@ -22,8 +22,20 @@ class MainActivity : FlutterActivity() {
         val messenger = flutterEngine.dartExecutor.binaryMessenger
 
         MethodChannel(messenger, calendarChannel).setMethodCallHandler { call, result ->
-            if (call.method == "zoneName") {
-                result.success(java.util.TimeZone.getDefault().id)
+            val zone = TimeZone.getTimeZone(java.util.TimeZone.getDefault().id)
+            val calendar = GregorianCalendar(zone).apply {
+                repeatedWallTimeOption = Calendar.WALLTIME_FIRST
+                skippedWallTimeOption = Calendar.WALLTIME_NEXT_VALID
+            }
+            if (call.method == "instantAt") {
+                val date = (call.arguments as? List<*>)?.mapNotNull { (it as? Number)?.toInt() }
+                if (date?.size != 5) {
+                    result.error("invalid_time", null, null)
+                } else {
+                    calendar.clear()
+                    calendar.set(date[0], date[1] - 1, date[2], date[3], date[4], 0)
+                    result.success(calendar.timeInMillis)
+                }
                 return@setMethodCallHandler
             }
             val instant = call.arguments as? Number
@@ -32,12 +44,7 @@ class MainActivity : FlutterActivity() {
             } else if (instant == null) {
                 result.error("invalid_instant", null, null)
             } else {
-                val zone = TimeZone.getTimeZone(java.util.TimeZone.getDefault().id)
-                val calendar = GregorianCalendar(zone).apply {
-                    repeatedWallTimeOption = Calendar.WALLTIME_FIRST
-                    skippedWallTimeOption = Calendar.WALLTIME_NEXT_VALID
-                    timeInMillis = instant.toLong()
-                }
+                calendar.timeInMillis = instant.toLong()
                 val date = listOf(
                     calendar.get(Calendar.YEAR),
                     calendar.get(Calendar.MONTH) + 1,

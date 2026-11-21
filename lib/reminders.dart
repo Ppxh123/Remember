@@ -1,6 +1,3 @@
-import 'package:timezone/data/latest_all.dart' as zones;
-import 'package:timezone/timezone.dart' as tz;
-
 import 'app_calendar.dart';
 import 'date_entries.dart';
 
@@ -25,12 +22,24 @@ final class PlannedReminder {
     required this.at,
     required this.title,
     required this.body,
+    this.occurrenceKey,
   });
 
   final int id;
   final DateTime at;
   final String title;
   final String body;
+  final String? occurrenceKey;
+}
+
+typedef ScheduledOccurrence = ({String key, int milliseconds});
+
+abstract interface class ReminderHistory {
+  Future<Map<int, ScheduledOccurrence>> readScheduledOccurrences();
+  Future<void> recordScheduledOccurrence(
+    int id,
+    ScheduledOccurrence? occurrence,
+  );
 }
 
 abstract interface class ReminderStore {
@@ -49,22 +58,22 @@ class Reminders {
     required this.dates,
     required this.timeZones,
     required this.delivery,
-    required this.deviceZoneName,
+    required this.deviceDayAt,
+    required this.deviceInstantAt,
     this.now = DateTime.now,
-  }) {
-    zones.initializeTimeZones();
-  }
+  });
 
   final ReminderStore store;
   final DateEntries dates;
   final AppTimeZoneStore timeZones;
   final ReminderDelivery delivery;
-  final Future<String> Function() deviceZoneName;
+  final DeviceDayAt deviceDayAt;
+  final DeviceInstantAt deviceInstantAt;
   final DateTime Function() now;
 
   Future<void> _queued = Future.value();
 
-  bool supports(DateEntry entry) => entry.id != null && !entry.type.repeats;
+  bool supports(DateEntry entry) => entry.id != null;
 
   Future<ReminderOptions?> read(ReminderKey key) async {
     final records = await store.readReminders();
@@ -118,9 +127,9 @@ class Reminders {
   ) async {
     if (records.isEmpty) return {};
     final zone = await timeZones.readTimeZone();
-    final location = tz.getLocation(
-      zone == AppTimeZone.beijing ? 'Asia/Shanghai' : await deviceZoneName(),
-    );
+    final today = zone == AppTimeZone.beijing
+        ? beijingDayAt(now()).date
+        : (await deviceDayAt(now())).date;
     final byId = {
       for (final entry in await dates.read())
         if (supports(entry)) entry.id!: entry,
@@ -129,24 +138,48 @@ class Reminders {
     for (final record in records) {
       final entry = byId[record.key.id];
       if (entry == null) continue;
-      final options = record.options;
-      final date = entry.targetDate.subtract(Duration(days: options.leadDays));
-      final at = tz.TZDateTime(
-        location,
-        date.year,
-        date.month,
-        date.day,
-        options.hour,
-        options.minute,
+      plans[record.key] = await _plansForDate(
+        entry,
+        record.options,
+        today,
+        zone,
       );
-      plans[record.key] = [
+    }
+    return plans;
+  }
+
+  Future<List<PlannedReminder>> _plansForDate(
+    DateEntry entry,
+    ReminderOptions options,
+    DateTime today,
+    AppTimeZone zone,
+  ) async {
+    final repeats = entry.type.repeats;
+    // Keep yesterday's nominal occurrence eligible for delayed system delivery.
+    final from = today.add(Duration(days: options.leadDays - 1));
+    var occurrence = repeats ? entry.occurrenceFor(from) : entry.targetDate;
+    final plans = <PlannedReminder>[];
+    final count = repeats ? 3 : 1;
+    for (var index = 0; index < count; index++) {
+      final date = occurrence.subtract(Duration(days: options.leadDays));
+      final slot = repeats ? 1 + entry.yearOfOccurrence(occurrence) % 3 : 0;
+      plans.add(
         PlannedReminder(
-          id: record.key.id * 8,
-          at: at,
+          id: entry.id! * 8 + slot,
+          at: zone == AppTimeZone.beijing
+              ? beijingInstantAt(date, options.hour, options.minute)
+              : await deviceInstantAt(date, options.hour, options.minute),
           title: entry.title,
-          body: '日期提醒',
+          body: repeats ? '${entry.type.label}提醒' : '日期提醒',
+          occurrenceKey:
+              'date:${entry.id}:${occurrence.millisecondsSinceEpoch}',
         ),
-      ];
+      );
+      if (index + 1 < count) {
+        occurrence = entry.occurrenceFor(
+          occurrence.add(const Duration(days: 1)),
+        );
+      }
     }
     return plans;
   }
