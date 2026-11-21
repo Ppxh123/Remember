@@ -12,6 +12,117 @@ import 'package:remember/lunar_date.dart';
 import 'package:remember/reminders.dart';
 
 void main() {
+  test('清除到期日与已开始的提醒保存串行，清除后没有残留计划', () async {
+    final items = _ReminderItems();
+    final records = _MemoryReminders();
+    final delivery = _TestDelivery()..granted = true;
+    final snapshotRead = Completer<void>();
+    final continueRead = Completer<void>();
+    const key = (scope: ReminderScope.item, id: 1);
+    final reminders = Reminders(
+      store: records,
+      dates: _MemoryDateEntries(),
+      readItems: () async {
+        final snapshot = await items.readItems();
+        if (!snapshotRead.isCompleted) {
+          snapshotRead.complete();
+          await continueRead.future;
+        }
+        return snapshot;
+      },
+      timeZones: _MemoryTimeZones(),
+      delivery: delivery,
+      deviceDayAt: _dayInFixtureZone,
+      deviceInstantAt: _instantInFixtureZone,
+      now: () => DateTime.utc(2026, 6, 1),
+    );
+    final save = reminders.save(key, const ReminderOptions());
+    await snapshotRead.future;
+    final clear = reminders.synchronize(
+      update: () async {
+        await items.updateItemExpiry(1, null);
+        await records.writeReminder(key, null);
+      },
+    );
+    continueRead.complete();
+    expect(await save, ReminderSaveResult.saved);
+    await clear;
+    expect(records.records, isEmpty);
+    expect(delivery.pending, isEmpty);
+  });
+
+  testWidgets('有到期日的物品提供提醒入口', (tester) async {
+    final items = _ReminderItems();
+    final dates = _MemoryDateEntries();
+    final timeZones = _MemoryTimeZones();
+    final delivery = _TestDelivery();
+    final reminders = Reminders(
+      store: _MemoryReminders(),
+      dates: dates,
+      readItems: items.readItems,
+      timeZones: timeZones,
+      delivery: delivery,
+      deviceDayAt: _dayInFixtureZone,
+      deviceInstantAt: _instantInFixtureZone,
+      now: () => DateTime.utc(2026, 6, 1),
+    );
+    await tester.pumpWidget(
+      MainApp(
+        dateEntries: dates,
+        items: items,
+        timeZones: timeZones,
+        reminders: reminders,
+        now: () => DateTime.utc(2026, 6, 1),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(NavigationDestination, '物品'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('提醒用物品'));
+    await tester.pumpAndSettle();
+    expect(find.text('设置到期提醒'), findsOneWidget);
+
+    await tester.tap(find.text('设置到期提醒'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(SwitchListTile, '启用提醒'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存提醒'));
+    await tester.pumpAndSettle();
+    expect(find.text('通知权限未开启，提醒未启用'), findsOneWidget);
+    expect(find.text('提醒用物品'), findsOneWidget);
+    expect(find.text('到期日 2026年6月2日星期二'), findsOneWidget);
+
+    delivery.granted = true;
+    const key = (scope: ReminderScope.item, id: 1);
+    expect(
+      await reminders.save(key, const ReminderOptions()),
+      ReminderSaveResult.saved,
+    );
+    expect(delivery.pending.single.at, DateTime.utc(2026, 6, 2, 1));
+    final id = delivery.pending.single.id;
+
+    await items.updateItemExpiry(
+      1,
+      ItemExpiry.calculated(
+        ShelfLife(
+          producedOn: DateTime.utc(2026, 6, 1),
+          amount: 4,
+          unit: ShelfLifeUnit.days,
+        ),
+      ),
+    );
+    await reminders.synchronize();
+    expect(delivery.pending.single.at, DateTime.utc(2026, 6, 5, 1));
+    await reminders.save(key, const ReminderOptions(leadDays: 1, hour: 10));
+    expect(delivery.pending.single.at, DateTime.utc(2026, 6, 4, 2));
+    await timeZones.writeTimeZone(AppTimeZone.device);
+    await reminders.synchronize();
+    expect(delivery.pending.single.at, DateTime.utc(2026, 6, 4, 17));
+    expect(delivery.pending.single.id, id);
+    await reminders.save(key, null);
+    expect(delivery.pending, isEmpty);
+  });
+
   test('年度提醒按公历闰日和农历闰月分别预排并滚动', () async {
     final dates = _MemoryDateEntries();
     await dates.add(
@@ -58,6 +169,7 @@ void main() {
     final reminders = Reminders(
       store: store,
       dates: dates,
+      readItems: () async => [],
       timeZones: timeZones,
       delivery: delivery,
       deviceDayAt: _dayInFixtureZone,
@@ -116,6 +228,7 @@ void main() {
     final reminders = Reminders(
       store: storage,
       dates: entries,
+      readItems: () async => [],
       timeZones: timeZones,
       delivery: delivery,
       now: () => now,
@@ -536,3 +649,20 @@ Future<DateTime> _instantInFixtureZone(
   int hour,
   int minute,
 ) async => DateTime.utc(date.year, date.month, date.day, hour + 7, minute);
+
+class _ReminderItems implements ItemEntries {
+  ItemExpiry? expiry = ItemExpiry.direct(DateTime.utc(2026, 6, 2));
+  @override
+  Future<List<ItemEntry>> readItems() async => [
+    ItemEntry(id: 1, name: '提醒用物品', expiry: expiry),
+  ];
+  @override
+  Future<void> addItem(ItemDraft item) async => throw UnimplementedError();
+  @override
+  Future<void> updateItemExpiry(int itemId, ItemExpiry? expiry) async {
+    this.expiry = expiry;
+  }
+
+  @override
+  Future<List<Uint8List>> readItemPhotos(int itemId) async => [];
+}

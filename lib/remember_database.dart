@@ -242,12 +242,21 @@ final class RememberDatabase
   @override
   Future<void> updateItemExpiry(int itemId, ItemExpiry? expiry) async {
     final database = await _open();
-    await database.update(
-      'items',
-      _expiryValues(expiry),
-      where: 'id = ?',
-      whereArgs: [itemId],
-    );
+    await database.transaction((transaction) async {
+      await transaction.update(
+        'items',
+        _expiryValues(expiry),
+        where: 'id = ?',
+        whereArgs: [itemId],
+      );
+      if (expiry == null) {
+        await transaction.delete(
+          'reminders',
+          where: 'scope = ? AND entry_id = ?',
+          whereArgs: [ReminderScope.item.name, itemId],
+        );
+      }
+    });
   }
 
   Map<String, Object?> _expiryValues(ItemExpiry? expiry) => {

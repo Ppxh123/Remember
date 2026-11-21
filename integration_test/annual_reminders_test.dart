@@ -20,6 +20,7 @@ void main() {
     final manager = Reminders(
       store: store,
       dates: store,
+      readItems: () async => [],
       timeZones: store,
       delivery: delivery,
       deviceDayAt: deviceDayAt,

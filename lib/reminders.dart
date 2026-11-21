@@ -1,7 +1,8 @@
 import 'app_calendar.dart';
 import 'date_entries.dart';
+import 'item_entries.dart';
 
-enum ReminderScope { date }
+enum ReminderScope { date, item }
 
 enum ReminderSaveResult { saved, denied, passed }
 
@@ -56,6 +57,7 @@ class Reminders {
   Reminders({
     required this.store,
     required this.dates,
+    required this.readItems,
     required this.timeZones,
     required this.delivery,
     required this.deviceDayAt,
@@ -65,6 +67,7 @@ class Reminders {
 
   final ReminderStore store;
   final DateEntries dates;
+  final Future<List<ItemEntry>> Function() readItems;
   final AppTimeZoneStore timeZones;
   final ReminderDelivery delivery;
   final DeviceDayAt deviceDayAt;
@@ -109,12 +112,14 @@ class Reminders {
     });
   }
 
-  Future<void> synchronize() => _enqueue(() async {
-    final plans = await _plans(await store.readReminders());
-    await delivery.replacePending(
-      plans.values.expand((entries) => entries).toList(),
-    );
-  });
+  Future<void> synchronize({Future<void> Function()? update}) =>
+      _enqueue(() async {
+        if (update != null) await update();
+        final plans = await _plans(await store.readReminders());
+        await delivery.replacePending(
+          plans.values.expand((entries) => entries).toList(),
+        );
+      });
 
   Future<T> _enqueue<T>(Future<T> Function() work) {
     final action = _queued.then((_) => work());
@@ -134,8 +139,30 @@ class Reminders {
       for (final entry in await dates.read())
         if (supports(entry)) entry.id!: entry,
     };
+    final itemsById = {
+      if (records.any((record) => record.key.scope == ReminderScope.item))
+        for (final item in await readItems()) item.id: item,
+    };
     final plans = <ReminderKey, List<PlannedReminder>>{};
     for (final record in records) {
+      if (record.key.scope == ReminderScope.item) {
+        final item = itemsById[record.key.id];
+        final expiry = item?.expiry;
+        if (item != null && expiry != null) {
+          plans[record.key] = [
+            await _plan(
+              record.key,
+              4,
+              expiry.date,
+              record.options,
+              zone,
+              title: item.name,
+              body: '物品到期提醒',
+            ),
+          ];
+        }
+        continue;
+      }
       final entry = byId[record.key.id];
       if (entry == null) continue;
       plans[record.key] = await _plansForDate(
@@ -161,18 +188,16 @@ class Reminders {
     final plans = <PlannedReminder>[];
     final count = repeats ? 3 : 1;
     for (var index = 0; index < count; index++) {
-      final date = occurrence.subtract(Duration(days: options.leadDays));
       final slot = repeats ? 1 + entry.yearOfOccurrence(occurrence) % 3 : 0;
       plans.add(
-        PlannedReminder(
-          id: entry.id! * 8 + slot,
-          at: zone == AppTimeZone.beijing
-              ? beijingInstantAt(date, options.hour, options.minute)
-              : await deviceInstantAt(date, options.hour, options.minute),
+        await _plan(
+          (scope: ReminderScope.date, id: entry.id!),
+          slot,
+          occurrence,
+          options,
+          zone,
           title: entry.title,
           body: repeats ? '${entry.type.label}提醒' : '日期提醒',
-          occurrenceKey:
-              'date:${entry.id}:${occurrence.millisecondsSinceEpoch}',
         ),
       );
       if (index + 1 < count) {
@@ -182,5 +207,27 @@ class Reminders {
       }
     }
     return plans;
+  }
+
+  Future<PlannedReminder> _plan(
+    ReminderKey key,
+    int slot,
+    DateTime occurrence,
+    ReminderOptions options,
+    AppTimeZone zone, {
+    required String title,
+    required String body,
+  }) async {
+    final date = occurrence.subtract(Duration(days: options.leadDays));
+    return PlannedReminder(
+      id: key.id * 8 + slot,
+      at: zone == AppTimeZone.beijing
+          ? beijingInstantAt(date, options.hour, options.minute)
+          : await deviceInstantAt(date, options.hour, options.minute),
+      title: title,
+      body: body,
+      occurrenceKey:
+          '${key.scope.name}:${key.id}:${occurrence.millisecondsSinceEpoch}',
+    );
   }
 }

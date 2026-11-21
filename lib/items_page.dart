@@ -7,18 +7,22 @@ import 'item_expiry.dart';
 import 'item_expiry_dialog.dart';
 import 'item_form.dart';
 import 'item_photo_picker.dart';
+import 'reminder_dialog.dart';
+import 'reminders.dart';
 
 class ItemsPage extends StatefulWidget {
   const ItemsPage({
     required this.entries,
     required this.today,
     required this.pickPhotos,
+    this.reminders,
     super.key,
   });
 
   final ItemEntries entries;
   final DateTime today;
   final PickItemPhotos pickPhotos;
+  final Reminders? reminders;
 
   @override
   State<ItemsPage> createState() => _ItemsPageState();
@@ -59,6 +63,7 @@ class _ItemsPageState extends State<ItemsPage> {
             await widget.entries.updateItemExpiry(item.id, expiry);
             if (mounted) _reload();
           },
+          reminders: widget.reminders,
         ),
       ),
     );
@@ -156,12 +161,14 @@ class _ItemDetails extends StatefulWidget {
     required this.photos,
     required this.today,
     required this.onUpdate,
+    this.reminders,
   });
 
   final ItemEntry item;
   final Future<List<Uint8List>> photos;
   final DateTime today;
   final Future<void> Function(ItemExpiry?) onUpdate;
+  final Reminders? reminders;
 
   @override
   State<_ItemDetails> createState() => _ItemDetailsState();
@@ -172,6 +179,7 @@ class _ItemDetailsState extends State<_ItemDetails> {
   bool _saving = false;
 
   Future<void> _editExpiry() async {
+    final reminders = widget.reminders;
     final selected = await showDialog<ExpiryEdit>(
       context: context,
       builder: (_) =>
@@ -179,14 +187,27 @@ class _ItemDetailsState extends State<_ItemDetails> {
     );
     if (selected == null || !mounted) return;
     setState(() => _saving = true);
-    try {
-      await widget.onUpdate(selected.expiry);
+    final onUpdate = widget.onUpdate;
+    var written = false;
+    Future<void> update() async {
+      await onUpdate(selected.expiry);
+      written = true;
       if (mounted) setState(() => _expiry = selected.expiry);
+    }
+
+    try {
+      if (reminders == null) {
+        await update();
+      } else {
+        await reminders.synchronize(update: update);
+      }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('保存到期日失败，请重试')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(written ? '到期日已保存，提醒重排失败，请重试' : '保存到期日失败，请重试'),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -231,6 +252,18 @@ class _ItemDetailsState extends State<_ItemDetails> {
                           onPressed: _saving ? null : _editExpiry,
                           child: const Text('设置到期日'),
                         ),
+                        if (expiry != null && widget.reminders != null)
+                          OutlinedButton.icon(
+                            onPressed: _saving
+                                ? null
+                                : () =>
+                                      editReminder(context, widget.reminders!, (
+                                        scope: ReminderScope.item,
+                                        id: widget.item.id,
+                                      )),
+                            icon: const Icon(Icons.notifications_outlined),
+                            label: const Text('设置到期提醒'),
+                          ),
                       ],
                     ),
                   );

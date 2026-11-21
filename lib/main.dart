@@ -23,6 +23,7 @@ void main() {
       reminders: Reminders(
         store: database,
         dates: database,
+        readItems: database.readItems,
         timeZones: database,
         delivery: NotificationDelivery(history: database),
         deviceDayAt: device_clock.deviceDayAt,
@@ -235,6 +236,7 @@ class _HomeState extends State<_Home> {
       if (current != null)
         ItemsPage(
           entries: widget.items,
+          reminders: widget.reminders,
           today: current.today,
           pickPhotos: widget.pickPhotos,
         )
